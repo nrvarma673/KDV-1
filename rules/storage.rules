@@ -1,0 +1,31 @@
+rules_version = '2';
+
+// ==========================================================================
+// Cloud Storage Security Rules — KDV Life Journey
+//
+// Deploy via: Firebase Console > Storage > Rules tab > paste this file's
+// contents > Publish.  (Or via Firebase CLI: firebase deploy --only storage:rules)
+//
+// Design: all photo files live under /photos/{yearId}/{fileName}. Any
+// logged-in user (viewer or admin) may read them. Only admins — accounts
+// listed in the Firestore "admins" collection (doc id = their uid) — may
+// upload/replace/delete. This uses Firebase's cross-service Security Rules
+// feature (firestore.exists()) so Storage can check Firestore directly;
+// see rules/firestore.rules for how the "admins" collection is managed.
+// ==========================================================================
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /photos/{yearId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid))
+                   && request.resource.size < 15 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

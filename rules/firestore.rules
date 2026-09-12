@@ -1,0 +1,75 @@
+rules_version = '2';
+
+// ==========================================================================
+// Firestore Security Rules — KDV Life Journey
+//
+// Deploy via: Firebase Console > Firestore Database > Rules tab > paste this
+// file's contents > Publish.  (Or via Firebase CLI: firebase deploy --only firestore:rules)
+//
+// Design:
+//   - "achievements" is public read-only content shown on the home page.
+//   - "years" and the nested "photos" sub-collection hold the private family
+//     photo timeline — readable by ANY logged-in user (viewer or admin).
+//   - Only WRITES (upload, edit, delete, add year, add achievement) are
+//     restricted to admins — accounts listed in the "admins" collection
+//     (doc id = their Firebase Auth uid).
+//   - Admin status itself ("admins" collection) can be granted or revoked
+//     two ways: (a) by any existing admin, through the website's own
+//     "Manage Users" panel, or (b) manually in the Firebase Console
+//     (Firestore Database > Data tab > "admins" collection). Note (a) is a
+//     deliberate convenience trade-off: it means a compromised admin login
+//     could grant admin rights to another account — acceptable here since
+//     this is a small private family site with very few logins, but worth
+//     knowing. A brand-new Firebase project has NO admins collection at
+//     all, so the very first admin must always be added manually via the
+//     Console (see README "Step 3 — one-time setup").
+//   - "settings" holds internal app flags — admin-only.
+// ==========================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    match /admins/{uid} {
+      // Any signed-in user may check ONLY their own admin status (so the
+      // UI can show/hide the Admin link). Any existing admin may read the
+      // full list (to show "Current Admins" in Manage Users) and add/
+      // remove entries (to grant/revoke admin rights via the website).
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    match /achievements/{achievementId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /years/{yearId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+
+      match /photos/{photoId} {
+        allow read: if isSignedIn();
+        allow write: if isAdmin();
+      }
+    }
+
+    match /settings/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Deny everything else by default.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
